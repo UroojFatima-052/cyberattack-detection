@@ -5,6 +5,7 @@ Reads the log file and finds suspicious IP addresses.
 """
 
 import csv
+import os
 
 from merge_sort import merge_sort
 from binary_search import binary_search
@@ -191,3 +192,31 @@ def lookup_ip(analysis, ip):
                    else "No activity from this IP in the log, and not on the blacklist"),
         "found": False,
     }
+
+
+def is_valid_ip(ip):
+    """True if ip looks like an IPv4 address, e.g. 192.168.1.10."""
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return False
+    for part in parts:
+        if not part.isdigit() or int(part) > 255 or (len(part) > 1 and part[0] == "0"):
+            return False
+    return True
+
+
+def add_to_blacklist(path, ip):
+    """Add one IP to the end of the blacklist file (creates the file if needed)."""
+    needs_header = not os.path.exists(path) or os.path.getsize(path) == 0
+    needs_newline = False
+    if not needs_header:
+        with open(path, "rb") as f:
+            f.seek(-1, os.SEEK_END)
+            needs_newline = f.read(1) not in (b"\n", b"\r")
+
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        if needs_header:
+            f.write("IP Address\n")
+        elif needs_newline:
+            f.write("\n")
+        f.write(ip + "\n")
