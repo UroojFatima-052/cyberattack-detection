@@ -1,7 +1,16 @@
 # Cyberattack Detection
 
 A small desktop application that checks a server log file and reports suspicious IP addresses.
-Load a log file, click **Check**, and the table shows each suspicious IP and the type of attack.
+Load a log file, click **Check**, and the table shows each suspicious IP, the type of attack
+and the reason it was flagged.
+
+## The window
+
+| Tab | What it does |
+|---|---|
+| Scan Log | **Load File** and **Check**. Shows rows scanned, IP count, threats found, blacklist size, and a table of threats with the reason for each |
+| Test an IP | Type any IP with a number of requests and failed logins, click **Add Activity**. The rows are added to the log, the whole log is checked again, and the result card shows the verdict and the reason |
+| Blacklist | Shows every blacklisted IP. **Add to Blacklist** saves a new IP to `blacklist.csv` and checks the log again |
 
 Course project for **Analysis of Algorithms**, SMI University, Karachi.
 
@@ -23,8 +32,9 @@ One IP can match more than one rule. Counts are taken over the whole file.
 | 2 | Merge Sort | sort the blacklist once | O(m log m) |
 | 3 | Linear Scan (one pass, like Linear Search) | count failed logins and requests per IP | O(n) |
 | 4 | Binary Search | check each IP against the sorted blacklist | O(log m) per IP |
+| 5 | Binary Search | find one IP in the sorted results (Test an IP tab) | O(log k) |
 
-n = number of log rows, m = number of blacklisted IPs.
+n = number of log rows, m = number of blacklisted IPs, k = number of different IPs in the log.
 Total: **O(n log n + m log m)**, which is **O(n log n)** when the blacklist is small.
 Merge Sort needs **O(n)** extra memory.
 
