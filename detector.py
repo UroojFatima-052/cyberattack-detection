@@ -93,8 +93,35 @@ def read_blacklist(path):
     return blacklist
 
 
-def detect(rows, blacklist):
-    """Find suspicious IPs.
+def explain(summary, on_blacklist):
+    """Decide the attack types of one IP and say WHY in plain words.
+
+    Returns (attacks, reason), for example
+    (["Brute Force"], "12 failed logins > 5").
+    """
+    attacks = []
+    reasons = []
+    failed = summary["failed"]
+    requests = summary["requests"]
+
+    if failed > FAILED_LOGIN_LIMIT:
+        attacks.append("Brute Force")
+        reasons.append(f"{failed} failed logins > {FAILED_LOGIN_LIMIT}")
+    if requests > REQUEST_LIMIT:
+        attacks.append("Flooding")
+        reasons.append(f"{requests} requests > {REQUEST_LIMIT}")
+    if on_blacklist:
+        attacks.append("Blacklisted IP")
+        reasons.append("IP is on the blacklist")
+
+    if not attacks:
+        return [], (f"{failed} failed logins (limit {FAILED_LOGIN_LIMIT}), "
+                    f"{requests} requests (limit {REQUEST_LIMIT}), not on blacklist")
+    return attacks, ";  ".join(reasons)
+
+
+def analyse(rows, blacklist):
+    """Check EVERY IP in the log.
 
     Steps:
       1. Merge Sort the rows by IP address        O(n log n)
@@ -104,29 +131,39 @@ def detect(rows, blacklist):
 
     Total: O(n log n + m log m), which is O(n log n) when the blacklist is small.
 
-    Returns (results, total_ips) where results is a list of
-    {"ip", "requests", "failed", "attacks"} for suspicious IPs only.
+    Returns a dictionary:
+      "summaries" : one entry per IP, sorted by IP, with counts, attacks and reason
+      "ips"       : just the IPs, in the same sorted order (used for Binary Search)
+      "blacklist" : the sorted blacklist
     """
     sorted_rows = merge_sort(rows, key=lambda row: row["IP Address"])
     sorted_blacklist = merge_sort(blacklist)
     summaries = count_per_ip(sorted_rows)
 
-    results = []
     for s in summaries:
-        attacks = []
-        if s["failed"] > FAILED_LOGIN_LIMIT:
-            attacks.append("Brute Force")
-        if s["requests"] > REQUEST_LIMIT:
-            attacks.append("Flooding")
-        if binary_search(sorted_blacklist, s["ip"]) != -1:
-            attacks.append("Blacklisted IP")
+        on_blacklist = binary_search(sorted_blacklist, s["ip"]) != -1
+        s["blacklisted"] = on_blacklist
+        s["attacks"], s["reason"] = explain(s, on_blacklist)
+        s["found"] = True
 
-        if attacks:
+    return {
+        "summaries": summaries,
+        "ips": [s["ip"] for s in summaries],
+        "blacklist": sorted_blacklist,
+    }
+
+
+def detect(rows, blacklist):
+    """Return (results, total_ips): only the suspicious IPs, with reasons."""
+    analysis = analyse(rows, blacklist)
+    results = []
+    for s in analysis["summaries"]:
+        if s["attacks"]:
             results.append({
                 "ip": s["ip"],
                 "requests": s["requests"],
                 "failed": s["failed"],
-                "attacks": ", ".join(attacks),
+                "attacks": ", ".join(s["attacks"]),
+                "reason": s["reason"],
             })
-
-    return results, len(summaries)
+    return results, len(analysis["summaries"])
