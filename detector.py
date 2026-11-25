@@ -118,7 +118,7 @@ def explain(summary, on_blacklist):
     if not attacks:
         return [], (f"{failed} failed logins (limit {FAILED_LOGIN_LIMIT}), "
                     f"{requests} requests (limit {REQUEST_LIMIT}), not on blacklist")
-    return attacks, ";  ".join(reasons)
+    return attacks, ", ".join(reasons)
 
 
 def analyse(rows, blacklist):
