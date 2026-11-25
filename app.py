@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from tkinter import ttk, filedialog, messagebox
 
 from detector import (read_log, read_blacklist, analyse, lookup_ip, is_valid_ip,
+                      add_to_blacklist,
                       FAILED_LOGIN_LIMIT, REQUEST_LIMIT)
 
 # ---------- dark theme colours ----------
@@ -126,9 +127,10 @@ class DetectionApp:
     def _make_table(self, parent, columns):
         """columns: list of (key, title, width, anchor)."""
         table = ttk.Treeview(parent, columns=[c[0] for c in columns], show="headings")
-        for key, title, width, anchor in columns:
+        for i, (key, title, width, anchor) in enumerate(columns):
             table.heading(key, text=title, anchor=anchor)
-            table.column(key, width=width, anchor=anchor, minwidth=60)
+            table.column(key, width=width, anchor=anchor, minwidth=60,
+                         stretch=(i == len(columns) - 1))   # only the last column grows
         table.tag_configure("danger", foreground=DANGER)
         table.tag_configure("warn", foreground=WARN)
         table.tag_configure("safe", foreground=SAFE)
@@ -251,10 +253,10 @@ class DetectionApp:
         self._section_label(head, "DETECTED THREATS", bg=BG).pack(side="left")
         table_card = self._card(page, fill="both", expand=True, padx=24)
         self.table = self._make_table(table_card, [
-            ("ip", "IP ADDRESS", 150, "w"),
-            ("requests", "REQUESTS", 85, "center"),
-            ("failed", "FAILED LOGINS", 105, "center"),
-            ("attacks", "ATTACK TYPE", 250, "w"),
+            ("ip", "IP ADDRESS", 160, "w"),
+            ("requests", "REQUESTS", 100, "center"),
+            ("failed", "FAILED LOGINS", 130, "center"),
+            ("attacks", "ATTACK TYPE", 270, "w"),
             ("reason", "REASON", 420, "w"),
         ])
 
@@ -349,7 +351,49 @@ class DetectionApp:
 
     def _build_blacklist_tab(self):
         page = tk.Frame(self.pages, bg=BG)
+        tk.Label(page, text="IPs on this list are always reported as Blacklisted IP. "
+                            "New IPs are saved to blacklist.csv.",
+                 bg=BG, fg=MUTED, font=(FONT, 10)).pack(anchor="w", padx=24, pady=(20, 12))
+
+        form = self._card(page, fill="x", padx=24)
+        inner = tk.Frame(form, bg=CARD)
+        inner.pack(fill="x", padx=20, pady=18)
+        left = tk.Frame(inner, bg=CARD)
+        left.pack(side="left")
+        self._section_label(left, "IP ADDRESS").pack(anchor="w", pady=(0, 6))
+        self.bl_entry = self._entry(left, 24)
+        self.bl_entry.pack(anchor="w", ipady=7, ipadx=6)
+        self.bl_entry.bind("<Return>", lambda e: self.add_blacklist())
+        ttk.Button(inner, text="Add to Blacklist", style="Primary.TButton",
+                   command=self.add_blacklist).pack(side="right", anchor="s")
+
+        head = tk.Frame(page, bg=BG)
+        head.pack(fill="x", padx=24, pady=(20, 6))
+        self.bl_title = self._section_label(head, "", bg=BG)
+        self.bl_title.pack(side="left")
+        tk.Label(head, text="File: " + os.path.relpath(self.blacklist_path, app_folder()),
+                 bg=BG, fg=MUTED,
+                 font=(FONT, 9)).pack(side="right")
+
+        table_card = self._card(page, fill="both", expand=True, padx=24, pady=(0, 20))
+        self.bl_table = self._make_table(table_card, [
+            ("no", "#", 60, "center"),
+            ("ip", "IP ADDRESS", 240, "w"),
+            ("seen", "IN LOADED LOG", 200, "w"),
+        ])
+        self.refresh_blacklist()
         return page
+
+    def refresh_blacklist(self):
+        """Show the blacklist (in file order) and whether each IP is in the log."""
+        self.bl_title.config(text=f"BLACKLISTED IPS ({len(self.blacklist)})")
+        self.bl_table.delete(*self.bl_table.get_children())
+        for number, ip in enumerate(self.blacklist, start=1):
+            seen = "–"
+            if self.analysis is not None:
+                result = lookup_ip(self.analysis, ip)
+                seen = f"Yes, {result['requests']} requests" if result["found"] else "No"
+            self.bl_table.insert("", "end", tags=("warn",), values=(number, ip, seen))
 
     # ================= actions: Scan Log =================
     def load_file(self):
@@ -381,6 +425,7 @@ class DetectionApp:
         for key in ("rows", "ips", "threats"):
             self.stat_values[key].config(text="–", fg=TEXT)
         self._set_badge(None)
+        self.refresh_blacklist()
 
     def check(self):
         """Check button: scan the loaded rows."""
@@ -406,8 +451,34 @@ class DetectionApp:
                                            fg=DANGER if threats else SAFE)
         self.stat_values["blacklist"].config(text=str(len(self.blacklist)))
         self._set_badge(len(threats))
+        self.refresh_blacklist()
         if self.rows_label_name:
             self.file_label.config(text=f"{self.rows_label_name}   ({len(self.rows)} rows)")
+
+    # ================= actions: Blacklist =================
+    def add_blacklist(self):
+        """Add to Blacklist button: save the IP to the file and check again."""
+        ip = self.bl_entry.get().strip()
+        if not is_valid_ip(ip):
+            messagebox.showerror("Invalid IP address",
+                                 "Please type a valid IP address, for example 203.0.113.50")
+            return
+        if ip in self.blacklist:
+            messagebox.showinfo("Already blacklisted", f"{ip} is already on the blacklist.")
+            return
+        try:
+            add_to_blacklist(self.blacklist_path, ip)
+        except OSError:
+            messagebox.showerror("Could not save",
+                                 "The blacklist file could not be saved.")
+            return
+
+        self.blacklist.append(ip)
+        self.bl_entry.delete(0, "end")
+        if self.rows is not None and self.analysis is not None:
+            self.run_scan()                   # check the log again with the new list
+        self.stat_values["blacklist"].config(text=str(len(self.blacklist)))
+        self.refresh_blacklist()
 
     # ================= actions: Test an IP =================
     def add_activity(self):
