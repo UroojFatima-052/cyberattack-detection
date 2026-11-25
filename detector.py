@@ -167,3 +167,27 @@ def detect(rows, blacklist):
                 "reason": s["reason"],
             })
     return results, len(analysis["summaries"])
+
+
+def lookup_ip(analysis, ip):
+    """Find one IP in the analysis using Binary Search.
+
+    analysis["ips"] is already sorted (Merge Sort), so the search is
+    O(log k), where k is the number of different IPs in the log.
+    If the IP is not in the log, we still check the blacklist.
+    """
+    index = binary_search(analysis["ips"], ip)
+    if index != -1:
+        return analysis["summaries"][index]
+
+    on_blacklist = binary_search(analysis["blacklist"], ip) != -1
+    return {
+        "ip": ip,
+        "requests": 0,
+        "failed": 0,
+        "blacklisted": on_blacklist,
+        "attacks": ["Blacklisted IP"] if on_blacklist else [],
+        "reason": ("Not in the log, but the IP is on the blacklist" if on_blacklist
+                   else "No activity from this IP in the log, and not on the blacklist"),
+        "found": False,
+    }
