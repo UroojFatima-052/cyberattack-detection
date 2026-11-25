@@ -7,7 +7,7 @@ Load a log file, click Check, and see the suspicious IP addresses.
 import os
 import sys
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 
 from detector import read_log, read_blacklist, detect
 
@@ -158,15 +158,44 @@ class DetectionApp:
 
     def load_path(self, path):
         """Read the log file and remember its rows."""
-        self.rows = read_log(path)
+        try:
+            self.rows = read_log(path)
+        except ValueError as error:          # wrong columns or empty file
+            self._load_failed(str(error))
+            return
+        except (OSError, UnicodeDecodeError):
+            self._load_failed("This file could not be read. Please choose a CSV log file.")
+            return
+
         self.file_label.config(text=f"{os.path.basename(path)}  ({len(self.rows)} rows)",
                                fg=TEXT)
         self.table.delete(*self.table.get_children())
         self.status_label.config(text="File loaded. Click Check to find suspicious IPs.")
 
+    def _load_failed(self, message):
+        self.rows = None
+        self.file_label.config(text="No file loaded", fg=MUTED)
+        self.table.delete(*self.table.get_children())
+        self.status_label.config(text="Load a log file to begin.")
+        messagebox.showerror("Could not load file", message)
+
     def check(self):
         """Check button: run the detector and fill the results table."""
-        blacklist = read_blacklist(find_blacklist())
+        if self.rows is None:
+            messagebox.showinfo("No file loaded", "Please load a log file first.")
+            return
+
+        blacklist_path = find_blacklist()
+        if blacklist_path is None:
+            messagebox.showwarning(
+                "Blacklist not found",
+                "blacklist.csv was not found next to the program.\n"
+                "Brute Force and Flooding will still be checked.",
+            )
+            blacklist = []
+        else:
+            blacklist = read_blacklist(blacklist_path)
+
         results, total_ips = detect(self.rows, blacklist)
 
         self.table.delete(*self.table.get_children())
