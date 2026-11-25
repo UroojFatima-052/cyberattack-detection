@@ -4,8 +4,12 @@ Cyberattack Detection - desktop window (Tkinter)
 Load a log file, click Check, and see the suspicious IP addresses.
 """
 
+import os
+import sys
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
+
+from detector import read_log, read_blacklist, detect
 
 # Colours (light theme)
 BG = "#f5f7fb"
@@ -20,6 +24,22 @@ ALERT_ROW = "#fdecec"
 FONT = "Segoe UI"
 
 
+def app_folder():
+    """Folder the program runs from (works for app.py and for the .exe)."""
+    if getattr(sys, "frozen", False):          # running as .exe
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def find_blacklist():
+    """Look for blacklist.csv next to the program, then inside data/."""
+    for path in (os.path.join(app_folder(), "blacklist.csv"),
+                 os.path.join(app_folder(), "data", "blacklist.csv")):
+        if os.path.exists(path):
+            return path
+    return None
+
+
 class DetectionApp:
     def __init__(self, root):
         self.root = root
@@ -27,6 +47,8 @@ class DetectionApp:
         self.root.geometry("920x600")
         self.root.minsize(760, 480)
         self.root.configure(bg=BG)
+
+        self.rows = None            # log rows of the loaded file
 
         self._setup_styles()
         self._build_header()
@@ -76,10 +98,12 @@ class DetectionApp:
         bar = tk.Frame(self.root, bg=BG)
         bar.pack(fill="x", padx=24, pady=(18, 10))
 
-        self.load_button = ttk.Button(bar, text="Load File", style="Secondary.TButton")
+        self.load_button = ttk.Button(bar, text="Load File", style="Secondary.TButton",
+                                      command=self.load_file)
         self.load_button.pack(side="left")
 
-        self.check_button = ttk.Button(bar, text="Check", style="Primary.TButton")
+        self.check_button = ttk.Button(bar, text="Check", style="Primary.TButton",
+                                       command=self.check)
         self.check_button.pack(side="left", padx=(10, 0))
 
         self.file_label = tk.Label(bar, text="No file loaded", bg=BG, fg=MUTED,
@@ -121,6 +145,39 @@ class DetectionApp:
                  "more than 20 requests = Flooding   |   IP on blacklist = Blacklisted IP")
         tk.Label(footer, text=rules, bg=BG, fg=MUTED,
                  font=(FONT, 9)).pack(anchor="w", pady=(4, 0))
+
+    # ---------- button actions ----------
+    def load_file(self):
+        """Load File button: let the user pick a CSV log file."""
+        path = filedialog.askopenfilename(
+            title="Choose a log file",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if path:
+            self.load_path(path)
+
+    def load_path(self, path):
+        """Read the log file and remember its rows."""
+        self.rows = read_log(path)
+        self.file_label.config(text=f"{os.path.basename(path)}  ({len(self.rows)} rows)",
+                               fg=TEXT)
+        self.table.delete(*self.table.get_children())
+        self.status_label.config(text="File loaded. Click Check to find suspicious IPs.")
+
+    def check(self):
+        """Check button: run the detector and fill the results table."""
+        blacklist = read_blacklist(find_blacklist())
+        results, total_ips = detect(self.rows, blacklist)
+
+        self.table.delete(*self.table.get_children())
+        for r in results:
+            self.table.insert("", "end", tags=("alert",),
+                              values=(r["ip"], r["requests"], r["failed"], r["attacks"]))
+
+        self.status_label.config(
+            text=f"{len(self.rows)} rows checked  |  {total_ips} IP addresses  |  "
+                 f"{len(results)} suspicious"
+        )
 
 
 if __name__ == "__main__":
